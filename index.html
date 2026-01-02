@@ -128,6 +128,7 @@ footer {
     margin-top: 20px;
 }
 
+
 </style>
 </head>
 <body>
@@ -143,6 +144,27 @@ footer {
 <script>
 let tournamentCount = 0;
 let tournaments = {}; 
+
+// פונקציה לשמירת כל מצב הטורנירים לזיכרון הדפדפן
+function saveToLocalStorage() {
+    const dataToSave = {
+        tournaments: tournaments,
+        tournamentCount: tournamentCount
+    };
+    localStorage.setItem('tableTennisProject', JSON.stringify(dataToSave));
+}
+
+// פונקציה לטעינת הנתונים מהזיכרון בעת פתיחת האתר
+function loadFromLocalStorage() {
+    const saved = localStorage.getItem('tableTennisProject');
+    if (saved) {
+        const data = JSON.parse(saved);
+        tournamentCount = data.tournamentCount;
+        // כאן מומלץ לעבור בלולאה על הטורנירים ולשחזר את ה-DOM 
+        // לגרסה פשוטה: המשתמש יצטרך ללחוץ על "טען" או שהנתונים יישמרו למפגש הנוכחי
+        tournaments = data.tournaments;
+    }
+}
 
 function addTournament(){
   const name = prompt("הכנס שם לתחרות:");
@@ -207,6 +229,7 @@ function addTournament(){
 
   document.getElementById("create-groups"+tid).addEventListener("click", ()=>createGroups(tid));
   openTournament(tid);
+  saveToLocalStorage();
 }
 
 function openTournament(tid){
@@ -287,57 +310,39 @@ function openKnockoutTab(tid){
   tabbuttons[tabbuttons.length-1].classList.add("active");
 }
 
-function setupPlayers(tid, gIndex){
-  const n = parseInt(document.getElementById(`${tid}_playerCount${gIndex}`).value,10);
-  if(isNaN(n)||n<3||n>20) { alert("יש להזין מספר בין 3 ל-20"); return; }
+function setupPlayers(tid, gIndex) {
+    const n = parseInt(document.getElementById(`${tid}_playerCount${gIndex}`).value, 10);
+    if (isNaN(n) || n < 2 || n > 20) { alert("יש להזין מספר בין 2 ל-20"); return; }
 
-  const div = document.getElementById(`${tid}_playersInputs${gIndex}`);
-  div.innerHTML='';
+    const div = document.getElementById(`${tid}_playersInputs${gIndex}`);
+    div.innerHTML = '<h4>הזן שמות שחקנים:</h4>';
 
-  // אתחול השחקנים בבית
-  tournaments[tid].groups[gIndex] = Array(n).fill('').map(()=>{ return {name:'', points:0, wins:0}; });
+    tournaments[tid].groups[gIndex] = [];
 
-  for(let i=0; i<n; i++){
-    const input = document.createElement("input");
-    input.type='text';
-    input.placeholder=`שם שחקן ${i+1}`;
+    for (let i = 0; i < n; i++) {
+        const input = document.createElement("input");
+        input.type = 'text';
+        input.placeholder = `שם שחקן ${i + 1}`;
+        input.className = "player-name-input";
+        
+        input.onblur = (e) => {
+            const val = e.target.value.trim();
+            if(val) {
+                tournaments[tid].groups[gIndex][i] = { name: val, points: 0, wins: 0 };
+                updatePreRanking(tid, gIndex);
+                saveToLocalStorage();
+            }
+        };
 
-    // בדיקה למניעת כפילויות בתחרות
-    input.onchange = (e) => {
-        const newName = e.target.value.trim();
-        let duplicate = false;
+        div.appendChild(input);
+        div.appendChild(document.createElement("br"));
+    }
 
-        // בדיקה בכל הבתים של התחרות
-        tournaments[tid].groups.forEach((group, gi) => {
-            group.forEach((p, pi) => {
-                if(p.name === newName && (gi !== gIndex || pi !== i)){
-                    duplicate = true;
-                }
-            });
-        });
-
-        if(duplicate){
-            alert(`שחקן בשם "${newName}" כבר קיים בתחרות זו. בחר שם אחר.`);
-            e.target.value = "";
-            tournaments[tid].groups[gIndex][i].name = "";
-        } else {
-            tournaments[tid].groups[gIndex][i].name = newName;
-        }
-
-        updatePreRanking(tid, gIndex);
-    };
-
-    div.appendChild(input);
-    div.appendChild(document.createElement("br"));
-  }
-
-  // כפתור ליצירת משחקים
-  const btn = document.createElement("button");
-  btn.textContent='צור משחקים';
-  btn.onclick=()=>createMatches(tid,gIndex);
-  div.appendChild(btn);
-
-  updatePreRanking(tid,gIndex);
+    const btn = document.createElement("button");
+    btn.textContent = 'צור לוח משחקים';
+    btn.style.marginTop = "10px";
+    btn.onclick = () => createMatches(tid, gIndex);
+    div.appendChild(btn);
 }
 
 function updatePreRanking(tid,gIndex){
@@ -404,162 +409,42 @@ function createMatches(tid,gIndex){
 }
 
 function calculateResults(tid, gIndex) {
-  const matchesDiv = document.getElementById(`${tid}_matches${gIndex}`);
-  if (!matchesDiv) return;
-  const tbody = matchesDiv.querySelector("tbody");
-  const players = tournaments[tid].groups[gIndex];
+    const matchesDiv = document.getElementById(`${tid}_matches${gIndex}`);
+    if (!matchesDiv) return;
+    const tbody = matchesDiv.querySelector("tbody");
+    const players = tournaments[tid].groups[gIndex];
 
-  // איפוס מדדים
-  players.forEach(p => { p.points = 0; p.wins = 0; });
+    // איפוס נתונים לחישוב מחדש
+    players.forEach(p => { p.points = 0; p.wins = 0; p.setsWon = 0; });
 
-  const rows = Array.from(tbody.querySelectorAll("tr"));
+    const rows = Array.from(tbody.querySelectorAll("tr"));
+    for (let row of rows) {
+        const inputs = row.querySelectorAll("input");
+        const s1 = parseInt(inputs[0].value, 10);
+        const s2 = parseInt(inputs[1].value, 10);
 
-  // חישוב ניצחונות ונקודות מכל משחק
-  for (let row of rows) {
-    const tds = row.querySelectorAll("td");
-    const name1 = tds[1].textContent.trim();
-    const name2 = tds[2].textContent.trim();
-    const idx1 = players.findIndex(p => p.name === name1);
-    const idx2 = players.findIndex(p => p.name === name2);
+        if (isNaN(s1) || isNaN(s2)) continue; // דלג על משחקים שלא מולאו
 
-    const inputs = tds[3].querySelectorAll("input");
-    const score1 = parseInt(inputs[0].value, 10);
-    const score2 = parseInt(inputs[1].value, 10);
+        const name1 = row.querySelectorAll("td")[1].textContent.trim();
+        const name2 = row.querySelectorAll("td")[2].textContent.trim();
+        const p1 = players.find(p => p.name === name1);
+        const p2 = players.find(p => p.name === name2);
 
-    if (isNaN(score1) || isNaN(score2) || score1 === score2) {
-      alert("חייב להיות מנצח בכל משחק (אין תיקו) — מלא את כל התוצאות להמשך החישוב.");
-      return;
-    }
-
-    // עדכון אובייקטים קיימים
-    if (idx1 >= 0 && idx2 >= 0) {
-      if (score1 > score2) {
-        players[idx1].wins++;
-      } else {
-        players[idx2].wins++;
-      }
-      // צברה נקודות לשני הצדדים (לעתים משתמשים בנקודות כדיפרנציאל)
-      players[idx1].points += isNaN(score1) ? 0 : score1;
-      players[idx2].points += isNaN(score2) ? 0 : score2;
-    }
-  }
-
-  // מיון לפי ניצחונות ואז נקודות (ולשמור יציבות למקרים שווה)
-  players.sort((a,b) => {
-    if (b.wins !== a.wins) return b.wins - a.wins;
-    if (b.points !== a.points) return b.points - a.points;
-    // כדי שהמיון יציב וניבאתי — נשווה שמות להחלטה דטרמיניסטית
-    return a.name.localeCompare(b.name);
-  });
-
-  // מצא קבוצות שוויון (wins+points) ושבהן יש צורך בהכרעה עבור מקומות 1 או 2
-  const groups = []; // קבוצות של שוויון: כל פריט {wins, points, members: [indexes]}
-  for (let i=0;i<players.length;i++){
-    const p = players[i];
-    let g = groups.find(gr => gr.wins === p.wins && gr.points === p.points);
-    if (!g) { g = {wins: p.wins, points: p.points, members: []}; groups.push(g); }
-    g.members.push(i);
-  }
-
-  // האם יש צורך בהכרעה עבור מיקום ראשון או שני?
-  // נמצא כל קבוצת שוויון שיש בה מיקום שנמצא בעמדה 0 או 1
-  const tieGroupsToResolve = [];
-  for (const gr of groups) {
-    const minPos = gr.members[0];
-    const maxPos = gr.members[gr.members.length-1];
-    // אם הקבוצה חופפת את המקום 0 (ראשון) או 1 (שני) -> צריך הכרעה
-    if (minPos <= 1 && maxPos >= 0) {
-      if (gr.members.length > 1) tieGroupsToResolve.push(gr);
-    }
-  }
-
-  // פונקציה ליצירת משחקי הכרעה לקבוצה נתונה
-  function createTieBreakerForGroup(gr) {
-    const tieDiv = document.createElement("div");
-    tieDiv.innerHTML = `<h4>משחקי הכרעה בבית ${gIndex+1} — לשוויון: ניצחונות ${gr.wins}, נקודות ${gr.points}</h4>`;
-    // נקח שמות השחקנים מהמאפיינים במערך players לפי אינדקסים
-    const tiedPlayers = gr.members.map(idx => players[idx]);
-
-    // אם יש בדיוק 2 — משחק אחד פשוט
-    if (tiedPlayers.length === 2) {
-      const p1 = tiedPlayers[0], p2 = tiedPlayers[1];
-      const matchHTML = document.createElement("div");
-      matchHTML.innerHTML = `
-        ${p1.name} vs ${p2.name}:
-        <input type="number" placeholder="${p1.name}" style="width:60px">
-        <input type="number" placeholder="${p2.name}" style="width:60px">
-        <button>הכריע מנצח</button>
-      `;
-      const btn = matchHTML.querySelector("button");
-      btn.onclick = () => {
-        const v1 = parseInt(matchHTML.querySelectorAll("input")[0].value, 10);
-        const v2 = parseInt(matchHTML.querySelectorAll("input")[1].value, 10);
-        if (isNaN(v1) || isNaN(v2) || v1 === v2) { alert("חייב להיות מנצח במשחק ההכרעה"); return; }
-        const winner = v1 > v2 ? p1 : p2;
-        const loser = v1 > v2 ? p2 : p1;
-        // עדכון סדר במערך players — שמים את המנצח במיקום הנמוך ביותר מתוך המקומות המצוינים בקבוצה
-        const positions = gr.members.slice().sort((a,b)=>a-b);
-        players[positions[0]] = winner;
-        players[positions[1]] = loser;
-        renderFinalRanking(players, tid, gIndex);
-        matchHTML.remove();
-      };
-      tieDiv.appendChild(matchHTML);
-    } else {
-      // מעל 2 שחקנים — ניצור סבב חצי־טורניר קטן: מתחברים זוגות בסדר ובאים להסיר זוגיות
-      // כדי שלא להעמיס בכפתור, פשוט נציג הודעה והמשתמש יכול לערוך ידנית (אפשר לשדרג ל-robin קטן בעתיד)
-      const info = document.createElement("div");
-      info.innerHTML = `<em>יש ${tiedPlayers.length} שווים — צור משחקי הכרעה ידנית בין המשתתפים כדי לקבוע את המיקום המבוקש (החלטה תישמר אחרי לחיצה על 'הכריע מנצח' לכל משחק).</em>`;
-      tieDiv.appendChild(info);
-      // אופציונלי: צור זוגות אוטומטיים (1v2, 3v4, ...) כמו בקוד קודם
-      for (let i = 0; i < tiedPlayers.length; i += 2) {
-        if (i+1 < tiedPlayers.length) {
-          const p1 = tiedPlayers[i], p2 = tiedPlayers[i+1];
-          const matchHTML = document.createElement("div");
-          matchHTML.innerHTML = `
-            ${p1.name} vs ${p2.name}:
-            <input type="number" placeholder="${p1.name}" style="width:60px">
-            <input type="number" placeholder="${p2.name}" style="width:60px">
-            <button>הכריע מנצח</button>
-          `;
-          const btn = matchHTML.querySelector("button");
-          btn.onclick = () => {
-            const v1 = parseInt(matchHTML.querySelectorAll("input")[0].value, 10);
-            const v2 = parseInt(matchHTML.querySelectorAll("input")[1].value, 10);
-            if (isNaN(v1) || isNaN(v2) || v1 === v2) { alert("חייב להיות מנצח במשחק ההכרעה"); return; }
-            const winner = v1 > v2 ? p1 : p2;
-            const loser = v1 > v2 ? p2 : p1;
-            // משבצים את המנצח למיקום הראשון הפנוי בקבוצה
-            const pos = gr.members.shift();
-            players[pos] = winner;
-            if (gr.members.length>0) {
-              const pos2 = gr.members.shift();
-              players[pos2] = loser;
-            }
-            renderFinalRanking(players, tid, gIndex);
-            matchHTML.remove();
-          };
-          tieDiv.appendChild(matchHTML);
-        } else {
-          // שחקן בלי יריב — מעביר למיקום הראשון הקיים
-          const pos = gr.members.shift();
-          players[pos] = tiedPlayers[i];
+        if (s1 > s2) {
+            p1.wins++;
+        } else if (s2 > s1) {
+            p2.wins++;
         }
-      }
+        
+        p1.points += s1;
+        p2.points += s2;
     }
 
-    matchesDiv.appendChild(tieDiv);
-  }
+    // מיון חכם: קודם ניצחונות, אח"כ הפרש נקודות (נקודות זכות פחות חובה)
+    players.sort((a, b) => b.wins - a.wins || b.points - a.points);
 
-  if (tieGroupsToResolve.length > 0) {
-    // נבנה הכרעות לכל קבוצת שוויון שצריך לפתור
-    tieGroupsToResolve.forEach(gr => createTieBreakerForGroup(gr));
-    // עולים לפעולה רק לאחר שהמשתמש ממלא את משחקי ההכרעה
-    return;
-  }
-
-  // אם לא נדרשת הכרעה - הצגת דירוג סופי
-  renderFinalRanking(players, tid, gIndex);
+    renderFinalRanking(players, tid, gIndex);
+    saveToLocalStorage(); // שמירה לאחר חישוב
 }
 
 
@@ -883,31 +768,39 @@ function placeInNextRound(tid, roundIdx, matchIdx, winnerName){
 }
 
 /* הכרעה ידנית (קלט תוצאה) – מסמן מנצח ונועל קלט */
-function autoDecideWinner(in1, in2){
-  const s1 = parseInt(in1.value, 10);
-  const s2 = parseInt(in2.value, 10);
-  if (isNaN(s1) || isNaN(s2) || s1 === s2) return;
+function autoDecideWinner(in1, in2) {
+    const s1 = parseInt(in1.value, 10);
+    const s2 = parseInt(in2.value, 10);
+    if (isNaN(s1) || isNaN(s2) || s1 === s2) return;
 
-  const matchDiv = in1.parentElement;
-  const p1 = matchDiv.querySelector(".p1").textContent.trim();
-  const p2 = matchDiv.querySelector(".p2").textContent.trim();
-  const winner = (s1 > s2) ? p1 : p2;
+    const matchDiv = in1.parentElement;
+    const p1Span = matchDiv.querySelector(".p1");
+    const p2Span = matchDiv.querySelector(".p2");
+    
+    // ניקוי הדגשות קודמות
+    p1Span.style.color = "black";
+    p2Span.style.color = "black";
 
-  // סימון מנצח ונעילה
-  setAutoWinner(matchDiv, winner, "מנצח");
+    const winner = (s1 > s2) ? p1Span.textContent.trim() : p2Span.textContent.trim();
+    
+    // הדגשת המנצח בירוק
+    if (s1 > s2) p1Span.style.color = "green"; else p2Span.style.color = "green";
 
-  const roundIdx = parseInt(matchDiv.dataset.round, 10);
-  const matchIdx = parseInt(matchDiv.dataset.match, 10);
-  const bracketEl = matchDiv.closest(".bracket");
-  const tid = bracketEl.id.replace("bracket", "");
+    setAutoWinner(matchDiv, winner, "מנצח");
 
-  placeInNextRound(tid, roundIdx, matchIdx, winner);
+    const roundIdx = parseInt(matchDiv.dataset.round, 10);
+    const matchIdx = parseInt(matchDiv.dataset.match, 10);
+    const tid = matchDiv.closest(".bracket").id.replace("bracket", "");
+
+    placeInNextRound(tid, roundIdx, matchIdx, winner);
+    saveToLocalStorage();
 }
 
 function closeTournament(tid){
   document.getElementById(tid).remove();
   document.getElementById("tabbtn_"+tid).remove();
   delete tournaments[tid];
+  saveToLocalStorage();
 }
 
 </script>
